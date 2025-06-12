@@ -2,7 +2,7 @@ import asyncio
 import re
 from urllib.parse import urljoin, urlparse
 import time
-from typing import Dict, Any, List # Added List and Dict import
+from typing import Dict, Any, List
 
 from logger import logger
 from config import settings
@@ -25,7 +25,23 @@ class Crawler:
         self.thread_parser = thread_parser
         self.normalizer = normalizer
         self.base_url = str(settings.FORUM_URL)
-        self.forum_path = "/index.php?/forums/forum/63-tamil-new-web-series-tv-shows/"
+        # Using the specific forum path from the problem description
+        # This will be appended to base_url to form the actual forum URL
+        self.forum_segment = "/index.php?/forums/forum/63-tamil-new-web-series-tv-shows/"
+        # Updated regex to match the new forum path if the config was updated
+        # The user provided a log with "19-web-series-tv-shows", so I'll use that for consistency
+        # Assuming forum_segment in config might change, so deriving regex from that.
+        # This should match either the original (63) or the new (19) forum IDs based on config.
+        # Extract the forum ID from the forum_segment in settings for robustness
+        forum_id_match = re.search(r'forum/(\d+)-', self.forum_segment)
+        if forum_id_match:
+            self.forum_id_in_url = forum_id_match.group(1)
+            # Re-compile regex with specific forum ID if needed, or keep it generic
+            # For robustness, keep it generic for thread_url_pattern, but use specific forum_segment for page URLs
+        else:
+            logger.warning("Could not extract forum ID from FORUM_URL segment. Using generic forum path.")
+            self.forum_id_in_url = "XX" # Placeholder if not found
+
         self.thread_url_pattern = re.compile(r"/forums/topic/(\d+)-") # Matches /forums/topic/{id}-
         self.thread_processing_queue = asyncio.Queue()
         self.crawl_bloom_filter = BloomFilter(
@@ -33,7 +49,8 @@ class Crawler:
             capacity=100000, error_rate=0.01 # Max 100k URLs, 1% false positive
         )
         self.http_client.bloom_filter = self.crawl_bloom_filter # Inject bloom filter into http_client
-        logger.info(f"Crawler initialized for forum: {self.base_url}{self.forum_path}")
+        logger.info(f"Crawler initialized for forum: {self.base_url}{self.forum_segment}")
+
 
     async def _get_thread_links_from_page(self, html_content: str) -> List[Dict[str, str]]:
         """
@@ -44,7 +61,6 @@ class Crawler:
         thread_links = []
 
         # Broaden the search to all <a> tags that have an 'href' attribute.
-        # Then filter these tags based on whether their href matches the expected thread URL pattern.
         for a_tag in soup.find_all("a", href=True): # Find all <a> tags that have an href attribute
             href = a_tag["href"] # Get the value of the href attribute
 
@@ -58,9 +74,6 @@ class Crawler:
                 thread_id = match.group(1)
                 # Basic deduplication: Add only if the thread_id is found and not already in our list
                 if thread_id: # Ensure thread_id was actually extracted
-                    # To prevent adding the same thread multiple times if linked from different parts of the page,
-                    # we can use a set of IDs already added in this page.
-                    # For simplicity, we'll check against the list for now, as thread_links won't be very large per page.
                     if not any(link['id'] == thread_id for link in thread_links):
                         thread_links.append({"url": href, "id": thread_id})
                         logger.debug(f"Found thread link: {href} (ID: {thread_id})")
@@ -112,7 +125,13 @@ class Crawler:
 
         try:
             while page_num <= initial_pages:
-                page_url = urljoin(self.base_url, f"{self.forum_path}page/{page_num}/")
+                if page_num == 1:
+                    # For the first page, use the base forum path without /page/1/
+                    page_url = urljoin(self.base_url, self.forum_segment)
+                else:
+                    # For subsequent pages, append /page/{page_num}/
+                    page_url = urljoin(self.base_url, f"{self.forum_segment}page/{page_num}/")
+
                 logger.info(f"Crawling forum page: {page_url}")
 
                 page_html = await self.http_client.get(page_url, force_fetch=True) # Always fetch page HTML
