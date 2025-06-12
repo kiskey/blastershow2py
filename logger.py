@@ -6,11 +6,12 @@ from config import settings
 logger.remove()
 
 # Add a new handler for structured JSON logging to stderr
+# Changed serialize=False and updated format for human-readability
 logger.add(
     sys.stderr,
     level=settings.LOG_LEVEL.upper(),
-    format="{time} {level} {message}",
-    serialize=True, # Enable JSON serialization
+    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    serialize=False, # Disable JSON serialization for human-readable logs
     backtrace=True, # Include traceback in case of errors
     diagnose=True   # Include variables in traceback
 )
