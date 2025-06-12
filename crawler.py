@@ -2,6 +2,7 @@ import asyncio
 import re
 from urllib.parse import urljoin, urlparse
 import time
+from typing import Dict, Any, List # Added List and Dict import
 
 from logger import logger
 from config import settings
