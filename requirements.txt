@@ -12,5 +12,5 @@ loguru==0.7.2
 nltk==3.8.1
 asyncio-throttle==0.1.0
 guessit==3.8.0
-chardet==5.2.0 # Replaced cchardet with chardet for Python 3.11 compatibility and stable builds.
-# Removed aiodns as it was implicitly related to cchardet issues in some contexts.
+chardet==5.2.0
+mmh3==4.1.0 # Explicitly added for BloomFilter
