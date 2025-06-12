@@ -2,12 +2,13 @@
 FROM python:3.11-slim-bookworm
 
 # Set environment variables for non-interactive NLTK downloads and Python unbuffered output
+# Add /usr/local/bin to PATH to ensure pip-installed executables are found
 ENV NLTK_DATA=/usr/local/nltk_data \
     PYTHONUNBUFFERED=1 \
-    PATH="/usr/local/bin:$PATH" # Add /usr/local/bin to PATH to ensure pip-installed executables are found
+    PATH="/usr/local/bin:$PATH"
 
 # Create a non-root user
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+RUN addgroup --system appgroup && adduser --system --ingroup appuser
 
 # Set the working directory inside the container
 WORKDIR /app
