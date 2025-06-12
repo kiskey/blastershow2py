@@ -12,6 +12,7 @@ from normalizer import TitleNormalizer, FuzzyMatcher
 from crawler import Crawler
 from scheduler import Scheduler
 from api import StremioAPI
+from aiohttp import web # Explicitly import web for aiohttp.web.AppRunner, etc.
 
 @asynccontextmanager
 async def lifespan_manager():
@@ -78,9 +79,9 @@ def main():
     """
     Main entry point for the application using aiorun.
     """
-    # Pass the lifespan_manager function directly to aiorun.run().
+    # Pass the lifespan_manager function directly as the first positional argument.
     # aiorun will internally handle entering/exiting the async context manager.
-    aiorun.run(main=lifespan_manager, stop_on_unhandled_errors=True)
+    aiorun.run(lifespan_manager, stop_on_unhandled_errors=True)
 
 if __name__ == "__main__":
     main()
