@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     REDIS_URL: str = Field("redis://localhost:6379/0", description="URL for Redis connection")
-    FORUM_URL: str = Field( # Changed HttpUrl to str for better path handling control
+    FORUM_URL: str = Field( # Changed from HttpUrl to str for precise URL handling of complex forum paths
         "https://www.1tamilblasters.fi/index.php?/forums/forum/63-tamil-new-web-series-tv-shows/", # Ensure this is the complete base forum page URL
         description="Base URL of the forum's target page to crawl (e.g., https://www.1tamilblasters.fi/index.php?/forums/forum/63-tamil-new-web-series-tv-shows/)"
     )
