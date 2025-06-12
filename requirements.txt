@@ -13,4 +13,6 @@ nltk==3.8.1
 asyncio-throttle==0.1.0
 guessit==3.8.0
 chardet==5.2.0
-mmh3==4.1.0 # Explicitly added for BloomFilter
+mmh3==4.1.0
+h2==4.1.0 # Added for HTTP/2 support with aiohttp
+hpack==4.0.0 # Added for HTTP/2 support with aiohttp
