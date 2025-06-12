@@ -1,11 +1,13 @@
 import asyncio
 import random
-from aiohttp import ClientSession, ClientError
+from aiohttp import ClientSession, ClientError, ClientResponseError, TCPConnector # Import TCPConnector
 from tenacity import retry, wait_exponential, stop_after_attempt, before_log
 from asyncio_throttle import Throttler
 from logger import logger
 from config import settings
-from utils.bloom_filter import BloomFilter # Assuming BloomFilter is in the same directory
+from utils.bloom_filter import BloomFilter
+from urllib.parse import urlparse # Import urlparse
+
 
 class HttpClient:
     """
@@ -37,9 +39,12 @@ class HttpClient:
     async def __aenter__(self):
         """
         Async context manager entry point. Initializes the aiohttp session.
+        Configures TCPConnector for HTTP/2 support.
         """
-        logger.debug("Initializing aiohttp ClientSession.")
-        self.session = ClientSession()
+        logger.debug("Initializing aiohttp ClientSession with HTTP/2 support.")
+        # Create a TCPConnector instance, explicitly enabling HTTP/2
+        connector = TCPConnector(force_interface=None, enable_http2=True)
+        self.session = ClientSession(connector=connector)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -60,7 +65,7 @@ class HttpClient:
     async def get(self, url: str, force_fetch: bool = False, **kwargs) -> str | None:
         """
         Performs an asynchronous HTTP GET request with retries, throttling,
-        and user-agent rotation.
+        and user-agent rotation. Includes enhanced browser-like headers and Referer header.
 
         Args:
             url (str): The URL to request.
@@ -81,12 +86,36 @@ class HttpClient:
                 return None
 
         headers = kwargs.pop("headers", {})
+        
+        # Add a random User-Agent
         headers["User-Agent"] = random.choice(self.user_agents)
+
+        # Add more common browser-like headers for robustness
+        headers.setdefault("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+        headers.setdefault("Accept-Encoding", "gzip, deflate, br")
+        headers.setdefault("Accept-Language", "en-US,en;q=0.5")
+        headers.setdefault("Connection", "keep-alive")
+        headers.setdefault("Upgrade-Insecure-Requests", "1") # Indicate preference for HTTPS
+        headers.setdefault("Sec-Fetch-Dest", "document")
+        headers.setdefault("Sec-Fetch-Mode", "navigate")
+        headers.setdefault("Sec-Fetch-Site", "none") # For initial navigation
+        headers.setdefault("Sec-Fetch-User", "?1")
+        # Add DNT header for privacy
+        headers.setdefault("DNT", "1")
+        # Add Cache-Control to avoid caching issues, requesting fresh content
+        headers.setdefault("Cache-Control", "max-age=0")
+
+
+        # Add a Referer header to simulate legitimate browser navigation
+        # Default to the domain of the requested URL
+        if "Referer" not in headers:
+            parsed_url = urlparse(url)
+            headers["Referer"] = f"{parsed_url.scheme}://{parsed_url.netloc}/"
         kwargs["headers"] = headers
 
         try:
             async with self.throttler: # Apply throttling before the request
-                logger.debug(f"Attempting to fetch URL: {url} with User-Agent: {headers['User-Agent']}")
+                logger.debug(f"Attempting to fetch URL: {url} with headers: {headers}") # Log all headers for debugging
                 async with self.session.get(url, **kwargs) as response:
                     response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
                     text = await response.text()
@@ -95,12 +124,14 @@ class HttpClient:
                     if self.bloom_filter and not force_fetch:
                         await self.bloom_filter.add(url)
                     return text
-        except ClientError as e:
-            # Changed to error level as this is a significant client-side HTTP error
-            logger.error(f"HTTP Client Error for {url}: {e}")
+        except ClientResponseError as e: # Catch specific aiohttp ClientResponseError
+            logger.error(f"HTTP Client Response Error for {url}: Status={e.status}, Message='{e.message}', URL='{e.url}'")
             # Re-raise to trigger tenacity retry or be caught by calling function
             raise
+        except ClientError as e: # Catch other aiohttp ClientError subclasses
+            logger.error(f"Generic HTTP Client Error for {url}: {str(e)}", exc_info=False) # Log generic ClientError without full exc_info to prevent 'Level' error
+            raise # Re-raise to trigger tenacity retry or be caught by calling function
         except Exception as e:
-            logger.error(f"An unexpected error occurred while fetching {url}: {e}", exc_info=True)
+            logger.error(f"An unexpected error occurred while fetching {url}: {str(e)}", exc_info=True)
             return None
 
