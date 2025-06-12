@@ -47,35 +47,36 @@ class Crawler:
     async def _get_thread_links_from_page(self, html_content: str) -> List[Dict[str, str]]:
         """
         Extracts valid thread links from a forum page's HTML content.
-        Robustly parses links by targeting specific HTML structure where thread titles are.
+        Robustly parses links by targeting common IP.Board thread title structure (h4 within ipsDataItem).
         """
         soup = self.thread_parser.BeautifulSoup(html_content, 'html.parser')
         thread_links = []
 
-        # Look for the main container for each thread item.
-        # Use a lambda function for class search to find 'ipsDataItem' anywhere in the class attribute.
-        thread_list_items = soup.find_all("li", class_=lambda x: x and "ipsDataItem" in x.split())
+        # Find list items that are likely thread containers.
+        # This is a common class for individual entries in IP.Board lists.
+        thread_containers = soup.find_all("li", class_=lambda x: x and "ipsDataItem" in x.split())
 
-        for item in thread_list_items:
-            # Inside each item, find any <a> tag with an href attribute.
-            # This is more robust as it relies on the container's class and the URL pattern,
-            # not specific classes on the <a> tag itself or an intermediate <h4>.
-            a_tag = item.find("a", href=True)
-            if a_tag:
-                href = a_tag["href"]
+        for container in thread_containers:
+            # Within each container, look for an h4 tag that typically holds the title,
+            # and then find an <a> tag within that h4 that has an href.
+            title_h4 = container.find("h4", class_="ipsDataItem_title")
+            if title_h4:
+                a_tag = title_h4.find("a", href=True)
+                if a_tag:
+                    href = a_tag["href"]
 
-                # Ensure it's a full URL by joining with the base_domain_url if it's a relative path.
-                if not href.startswith("http"):
-                    href = urljoin(self.base_domain_url, href)
+                    # Ensure it's a full URL by joining with the base_domain_url if it's a relative path.
+                    if not href.startswith("http"):
+                        href = urljoin(self.base_domain_url, href)
 
-                # Check if the href matches the defined thread URL pattern.
-                match = self.thread_url_pattern.search(href)
-                if match:
-                    thread_id = match.group(1)
-                    # Basic deduplication: Add only if the thread_id is found and not already in our list.
-                    if thread_id and not any(link['id'] == thread_id for link in thread_links):
-                        thread_links.append({"url": href, "id": thread_id})
-                        logger.debug(f"Found thread link: {href} (ID: {thread_id})")
+                    # Check if the href matches the defined thread URL pattern.
+                    match = self.thread_url_pattern.search(href)
+                    if match:
+                        thread_id = match.group(1)
+                        # Basic deduplication: Add only if the thread_id is found and not already in our list.
+                        if thread_id and not any(link['id'] == thread_id for link in thread_links):
+                            thread_links.append({"url": href, "id": thread_id})
+                            logger.debug(f"Found thread link: {href} (ID: {thread_id})")
         
         if not thread_links:
             logger.info("No thread links found on the current page. Check HTML structure or URL patterns.")
@@ -88,7 +89,6 @@ class Crawler:
         try:
             html = await self.http_client.get(thread_url)
             if html:
-                # Use base_domain_url for parser to resolve relative paths for posters etc.
                 parsed_data = self.thread_parser.parse_thread_page(html, self.base_domain_url)
                 if parsed_data and parsed_data["title"]:
                     parsed_data["thread_id"] = thread_id
@@ -98,7 +98,7 @@ class Crawler:
                     logger.warning(f"Failed to parse essential data from thread: {thread_url}")
             else:
                 logger.warning(f"Failed to fetch content for thread: {thread_url}")
-        except ClientResponseError as e: # Specific HTTP client errors
+        except ClientResponseError as e: # Specific HTTP client errors (e.g., 403, 404, 500)
             logger.error(f"HTTP Client Response Error processing thread {thread_url}: Status={e.status}, Message='{e.message}', URL='{e.url}'")
             await self.redis.add_error_to_queue({
                 "component": "crawler",
@@ -106,17 +106,16 @@ class Crawler:
                 "error": str(e),
                 "timestamp": int(time.time())
             })
-        except ClientError as e: # Other generic client errors
-            logger.error(f"Generic HTTP Client Error processing thread {thread_url}: {str(e)}")
+        except ClientError as e: # Other generic aiohttp client errors (e.g., network issues)
+            logger.error(f"Generic HTTP Client Error processing thread {thread_url}: {str(e)}") # Log without exc_info
             await self.redis.add_error_to_queue({
                 "component": "crawler",
                 "message": f"Generic HTTP Client Error processing thread {thread_url}: {str(e)}",
                 "error": str(e),
                 "timestamp": int(time.time())
             })
-        except Exception as e: # Catch-all for other unexpected errors
-            # Removed exc_info=True for general Exception after ClientError to avoid loguru conflict
-            logger.error(f"Error processing thread {thread_url}: {str(e)}")
+        except Exception as e: # Catch-all for other unexpected errors during processing
+            logger.error(f"Error processing thread {thread_url}: {str(e)}") # Log without exc_info to prevent loguru conflict
             await self.redis.add_error_to_queue({
                 "component": "crawler",
                 "message": f"Failed to process thread {thread_url}",
@@ -178,7 +177,7 @@ class Crawler:
 
                 page_num += 1
 
-        except ClientResponseError as e: # Specific HTTP client errors
+        except ClientResponseError as e: # Specific HTTP client errors during forum crawl
             logger.error(f"HTTP Client Error during forum crawling: Status={e.status}, Message='{e.message}', URL='{e.url}'")
             await self.redis.add_error_to_queue({
                 "component": "crawler",
@@ -186,7 +185,7 @@ class Crawler:
                 "error": str(e),
                 "timestamp": int(time.time())
             })
-        except ClientError as e: # Other generic client errors
+        except ClientError as e: # Other generic aiohttp client errors during forum crawl
             logger.error(f"Generic HTTP Client Error during forum crawling: {str(e)}")
             await self.redis.add_error_to_queue({
                 "component": "crawler",
@@ -194,9 +193,8 @@ class Crawler:
                 "error": str(e),
                 "timestamp": int(time.time())
             })
-        except Exception as e: # Catch-all for other unexpected errors
-            # Removed exc_info=True for general Exception after ClientError to avoid loguru conflict
-            logger.error(f"Critical error during forum crawling: {str(e)}")
+        except Exception as e: # Catch-all for other unexpected errors during forum crawl
+            logger.error(f"Critical error during forum crawling: {str(e)}") # Log without exc_info
             await self.redis.add_error_to_queue({
                 "component": "crawler",
                 "message": f"Critical forum crawl error",
