@@ -14,9 +14,9 @@ WORKDIR /app
 # Copy only requirements first to leverage Docker cache
 COPY requirements.txt .
 
-# Install build dependencies required for some Python packages (like cchardet)
+# Install build dependencies required for some Python packages
 # and then remove them to keep the final image size small.
-# python3-dev provides the necessary Python header files (e.g., longintrepr.h)
+# python3-dev provides the necessary Python header files
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential python3-dev && \
     pip install --no-cache-dir -r requirements.txt && \
@@ -46,5 +46,6 @@ USER appuser
 EXPOSE 8080
 
 # Define the command to run the application
-# Use the -A flag for aiorun to automatically manage the event loop
-CMD ["aiorun", "--single-task", "--shutdown-timeout", "5.0", "main:main"]
+# Use 'python -m aiorun' to ensure aiorun is executed as a Python module,
+# which is more robust than relying on its presence in PATH.
+CMD ["python", "-m", "aiorun", "--single-task", "--shutdown-timeout", "5.0", "main:main"]
