@@ -1,5 +1,5 @@
 import os
-from pydantic import Field, HttpUrl
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from loguru import logger
 
@@ -15,9 +15,9 @@ class Settings(BaseSettings):
     )
 
     REDIS_URL: str = Field("redis://localhost:6379/0", description="URL for Redis connection")
-    FORUM_URL: HttpUrl = Field(
-        "https://www.1tamilblasters.fi",
-        description="Base URL of the forum to crawl"
+    FORUM_URL: str = Field( # Changed HttpUrl to str for better path handling control
+        "https://www.1tamilblasters.fi/index.php?/forums/forum/63-tamil-new-web-series-tv-shows/", # Ensure this is the complete base forum page URL
+        description="Base URL of the forum's target page to crawl (e.g., https://www.1tamilblasters.fi/index.php?/forums/forum/63-tamil-new-web-series-tv-shows/)"
     )
     INITIAL_PAGES: int = Field(5, description="Number of initial forum pages to crawl on startup")
     CRAWL_INTERVAL_SECONDS: int = Field(1800, description="Interval in seconds for full forum re-crawl")
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     REQUEST_THROTTLE_MS: int = Field(250, description="Milliseconds to wait between requests to the forum")
     PURGE_ON_START: bool = Field(False, description="If true, purge all Redis data on startup")
     DOMAIN_MONITOR: str = Field(
-        "https://www.1tamilblasters.fi", # Placeholder if the domain changes, currently same as FORUM_URL
+        "https://www.1tamilblasters.fi", # Placeholder if the domain changes, currently same as FORUM_URL base
         description="URL to monitor for domain changes (optional, for future use)"
     )
     LOG_LEVEL: str = Field("INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
