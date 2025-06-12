@@ -33,6 +33,7 @@ class Crawler:
         parsed_settings_forum_url = urlparse(settings.FORUM_URL)
         self.base_domain_url = f"{parsed_settings_forum_url.scheme}://{parsed_settings_forum_url.netloc}"
 
+        # The core pattern to identify thread URLs
         self.thread_url_pattern = re.compile(r"/forums/topic/(\d+)-")
         self.thread_processing_queue = asyncio.Queue()
         self.crawl_bloom_filter = BloomFilter(
@@ -47,36 +48,29 @@ class Crawler:
     async def _get_thread_links_from_page(self, html_content: str) -> List[Dict[str, str]]:
         """
         Extracts valid thread links from a forum page's HTML content.
-        Robustly parses links by targeting common IP.Board thread title structure (h4 within ipsDataItem).
+        Robustly parses links by filtering all <a> tags based solely on the URL pattern '/topic/'.
         """
         soup = self.thread_parser.BeautifulSoup(html_content, 'html.parser')
         thread_links = []
+        found_thread_ids = set() # Use a set for efficient deduplication
 
-        # Find list items that are likely thread containers.
-        # This is a common class for individual entries in IP.Board lists.
-        thread_containers = soup.find_all("li", class_=lambda x: x and "ipsDataItem" in x.split())
+        # Find all <a> tags that have an 'href' attribute anywhere on the page.
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"]
 
-        for container in thread_containers:
-            # Within each container, look for an h4 tag that typically holds the title,
-            # and then find an <a> tag within that h4 that has an href.
-            title_h4 = container.find("h4", class_="ipsDataItem_title")
-            if title_h4:
-                a_tag = title_h4.find("a", href=True)
-                if a_tag:
-                    href = a_tag["href"]
+            # Ensure it's a full URL by joining with the base_domain_url if it's a relative path.
+            if not href.startswith("http"):
+                href = urljoin(self.base_domain_url, href)
 
-                    # Ensure it's a full URL by joining with the base_domain_url if it's a relative path.
-                    if not href.startswith("http"):
-                        href = urljoin(self.base_domain_url, href)
-
-                    # Check if the href matches the defined thread URL pattern.
-                    match = self.thread_url_pattern.search(href)
-                    if match:
-                        thread_id = match.group(1)
-                        # Basic deduplication: Add only if the thread_id is found and not already in our list.
-                        if thread_id and not any(link['id'] == thread_id for link in thread_links):
-                            thread_links.append({"url": href, "id": thread_id})
-                            logger.debug(f"Found thread link: {href} (ID: {thread_id})")
+            # Check if the href matches the defined thread URL pattern.
+            match = self.thread_url_pattern.search(href)
+            if match:
+                thread_id = match.group(1)
+                # Deduplication: Add only if the thread_id hasn't been added yet for this page.
+                if thread_id and thread_id not in found_thread_ids:
+                    thread_links.append({"url": href, "id": thread_id})
+                    found_thread_ids.add(thread_id)
+                    logger.debug(f"Found thread link: {href} (ID: {thread_id})")
         
         if not thread_links:
             logger.info("No thread links found on the current page. Check HTML structure or URL patterns.")
