@@ -43,7 +43,8 @@ class HttpClient:
         """
         logger.debug("Initializing aiohttp ClientSession with HTTP/2 support.")
         # Create a TCPConnector instance, explicitly enabling HTTP/2
-        connector = TCPConnector(force_interface=None, enable_http2=True)
+        # Removed 'force_interface' as it's not a valid argument for aiohttp==3.9.5
+        connector = TCPConnector(enable_http2=True)
         self.session = ClientSession(connector=connector)
         return self
 
