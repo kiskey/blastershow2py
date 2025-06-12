@@ -96,8 +96,9 @@ class HttpClient:
                         await self.bloom_filter.add(url)
                     return text
         except ClientError as e:
-            logger.warning(f"HTTP Client Error for {url}: {e}")
-            # Re-raise to trigger tenacity retry
+            # Changed to error level as this is a significant client-side HTTP error
+            logger.error(f"HTTP Client Error for {url}: {e}")
+            # Re-raise to trigger tenacity retry or be caught by calling function
             raise
         except Exception as e:
             logger.error(f"An unexpected error occurred while fetching {url}: {e}", exc_info=True)
