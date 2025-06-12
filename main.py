@@ -78,8 +78,9 @@ def main():
     """
     Main entry point for the application using aiorun.
     """
-    # aiorun expects a coroutine or context manager directly
-    aiorun.run(lifespan_manager(), stop_on_unhandled_errors=True)
+    # Pass the lifespan_manager function directly to aiorun.run().
+    # aiorun will internally handle entering/exiting the async context manager.
+    aiorun.run(main=lifespan_manager, stop_on_unhandled_errors=True)
 
 if __name__ == "__main__":
     main()
