@@ -3,7 +3,8 @@ FROM python:3.11-slim-bookworm
 
 # Set environment variables for non-interactive NLTK downloads and Python unbuffered output
 ENV NLTK_DATA=/usr/local/nltk_data \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PATH="/usr/local/bin:$PATH" # Add /usr/local/bin to PATH to ensure pip-installed executables are found
 
 # Create a non-root user
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
@@ -46,6 +47,5 @@ USER appuser
 EXPOSE 8080
 
 # Define the command to run the application
-# Use 'python -m aiorun' to ensure aiorun is executed as a Python module,
-# which is more robust than relying on its presence in PATH.
-CMD ["python", "-m", "aiorun", "--single-task", "--shutdown-timeout", "5.0", "main:main"]
+# Now that /usr/local/bin is explicitly in PATH, 'aiorun' should be found correctly.
+CMD ["aiorun", "--single-task", "--shutdown-timeout", "5.0", "main:main"]
