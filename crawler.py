@@ -24,23 +24,15 @@ class Crawler:
         self.http_client = http_client
         self.thread_parser = thread_parser
         self.normalizer = normalizer
-        self.base_url = str(settings.FORUM_URL)
-        # Using the specific forum path from the problem description
-        # This will be appended to base_url to form the actual forum URL
-        self.forum_segment = "/index.php?/forums/forum/63-tamil-new-web-series-tv-shows/"
-        # Updated regex to match the new forum path if the config was updated
-        # The user provided a log with "19-web-series-tv-shows", so I'll use that for consistency
-        # Assuming forum_segment in config might change, so deriving regex from that.
-        # This should match either the original (63) or the new (19) forum IDs based on config.
-        # Extract the forum ID from the forum_segment in settings for robustness
-        forum_id_match = re.search(r'forum/(\d+)-', self.forum_segment)
-        if forum_id_match:
-            self.forum_id_in_url = forum_id_match.group(1)
-            # Re-compile regex with specific forum ID if needed, or keep it generic
-            # For robustness, keep it generic for thread_url_pattern, but use specific forum_segment for page URLs
-        else:
-            logger.warning("Could not extract forum ID from FORUM_URL segment. Using generic forum path.")
-            self.forum_id_in_url = "XX" # Placeholder if not found
+
+        # The base URL now comes directly from settings.FORUM_URL
+        # We need to extract the 'domain' part and the 'forum_path_segment'
+        parsed_forum_url = urlparse(settings.FORUM_URL)
+        self.base_domain_url = f"{parsed_forum_url.scheme}://{parsed_forum_url.netloc}"
+        # This will be the full path part for the forum page, e.g., /index.php?/forums/forum/19-web-series-tv-shows/
+        self.forum_base_path = parsed_forum_url.path
+        if not self.forum_base_path.endswith('/'):
+            self.forum_base_path += '/' # Ensure it ends with a slash for consistent joining
 
         self.thread_url_pattern = re.compile(r"/forums/topic/(\d+)-") # Matches /forums/topic/{id}-
         self.thread_processing_queue = asyncio.Queue()
@@ -49,7 +41,7 @@ class Crawler:
             capacity=100000, error_rate=0.01 # Max 100k URLs, 1% false positive
         )
         self.http_client.bloom_filter = self.crawl_bloom_filter # Inject bloom filter into http_client
-        logger.info(f"Crawler initialized for forum: {self.base_url}{self.forum_segment}")
+        logger.info(f"Crawler initialized for forum base: {self.base_domain_url} and forum path: {self.forum_base_path}")
 
 
     async def _get_thread_links_from_page(self, html_content: str) -> List[Dict[str, str]]:
@@ -65,8 +57,9 @@ class Crawler:
             href = a_tag["href"] # Get the value of the href attribute
 
             # Ensure it's a full URL by joining with the base_url if it's a relative path
+            # Use self.base_domain_url for joining
             if not href.startswith("http"):
-                href = urljoin(self.base_url, href)
+                href = urljoin(self.base_domain_url, href)
 
             # Check if the href matches the defined thread URL pattern
             match = self.thread_url_pattern.search(href)
@@ -86,7 +79,7 @@ class Crawler:
         try:
             html = await self.http_client.get(thread_url)
             if html:
-                parsed_data = self.thread_parser.parse_thread_page(html, self.base_url)
+                parsed_data = self.thread_parser.parse_thread_page(html, self.base_domain_url) # Use base_domain_url for parser
                 if parsed_data and parsed_data["title"]:
                     # Ensure thread_id is stored correctly as string
                     parsed_data["thread_id"] = thread_id
@@ -101,7 +94,7 @@ class Crawler:
             await self.redis.add_error_to_queue({
                 "component": "crawler",
                 "message": f"Failed to process thread {thread_url}",
-                "error": str(e),
+                "error": str(e), # Explicitly convert exception to string
                 "timestamp": int(time.time())
             })
 
@@ -126,11 +119,15 @@ class Crawler:
         try:
             while page_num <= initial_pages:
                 if page_num == 1:
-                    # For the first page, use the base forum path without /page/1/
-                    page_url = urljoin(self.base_url, self.forum_segment)
+                    # For the first page, use the FORUM_URL directly as it represents page 1
+                    page_url = settings.FORUM_URL
                 else:
-                    # For subsequent pages, append /page/{page_num}/
-                    page_url = urljoin(self.base_url, f"{self.forum_segment}page/{page_num}/")
+                    # For subsequent pages, append 'page/{page_num}/' to the forum's base path
+                    # Ensure the forum_base_path does not already contain a 'page/' segment
+                    # and construct properly.
+                    # Example: https://www.1tamilmv.boo/index.php?/forums/forum/19-web-series-tv-shows/page/2/
+                    page_url = f"{self.base_domain_url}{self.forum_base_path}page/{page_num}/"
+
 
                 logger.info(f"Crawling forum page: {page_url}")
 
@@ -168,7 +165,7 @@ class Crawler:
             await self.redis.add_error_to_queue({
                 "component": "crawler",
                 "message": f"Critical forum crawl error",
-                "error": str(e),
+                "error": str(e), # Explicitly convert exception to string
                 "timestamp": int(time.time())
             })
         finally:
