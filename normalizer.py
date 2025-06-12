@@ -1,6 +1,6 @@
 import re
 from rapidfuzz import fuzz
-from typing import List
+from typing import List, Optional # Added Optional import
 from nltk.stem import PorterStemmer
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
