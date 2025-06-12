@@ -38,7 +38,7 @@ jobs:
           context: . # The build context is the root of your repository
           push: true # Push the image to GHCR
           tags: |
-            ghcr.io/${{ github.repository }}/tamil-blasters-addon:latest # Tag as latest, using repo name
-            ghcr.io/${{ github.repository }}/tamil-blasters-addon:${{ github.sha }} # Tag with commit SHA for versioning
+            ghcr.io/${{ github.repository }}/tamil-blasters-addon:latest
+            ghcr.io/${{ github.repository }}/tamil-blasters-addon:${{ github.sha }} 
           cache-from: type=gha # Use GitHub Actions cache for faster builds
           cache-to: type=gha,mode=max # Cache layers for future builds
