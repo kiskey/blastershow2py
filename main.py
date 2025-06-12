@@ -89,8 +89,9 @@ def main():
     """
     Main entry point for the application using aiorun.
     """
-    # Pass the run_application coroutine function directly to aiorun.run().
-    aiorun.run(run_application, stop_on_unhandled_errors=True)
+    # Pass the result of calling run_application() (which is a coroutine object)
+    # directly to aiorun.run(). This is the correct and robust way to do it.
+    aiorun.run(run_application(), stop_on_unhandled_errors=True)
 
 if __name__ == "__main__":
     main()
