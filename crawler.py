@@ -87,7 +87,7 @@ class Crawler:
             else:
                 logger.warning(f"Failed to fetch content for thread: {thread_url}")
         except ClientError as e: # Catch aiohttp's specific error
-            logger.error(f"HTTP Client Error processing thread {thread_url}: {str(e)}", exc_info=True)
+            logger.error(f"HTTP Client Error processing thread {thread_url}: {str(e)}") # Log without exc_info to prevent 'Level' error if from ClientResponseError
             await self.redis.add_error_to_queue({
                 "component": "crawler",
                 "message": f"HTTP Client Error processing thread {thread_url}: {str(e)}",
@@ -165,7 +165,7 @@ class Crawler:
                 page_num += 1
 
         except ClientError as e: # Catch aiohttp's specific error
-            logger.error(f"HTTP Client Error during forum crawling: {str(e)}", exc_info=True)
+            logger.error(f"HTTP Client Error during forum crawling: {str(e)}") # Log without exc_info
             await self.redis.add_error_to_queue({
                 "component": "crawler",
                 "message": f"HTTP Client Error during forum crawl: {str(e)}",
