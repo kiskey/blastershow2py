@@ -1,5 +1,5 @@
 aiohttp==3.9.5
-aiorun==2025.1.1 # Updated to a valid version
+aiorun==2025.1.1
 beautifulsoup4==4.12.3
 redis==5.0.1
 tenacity==8.4.1
@@ -10,8 +10,7 @@ pydantic==2.7.1
 pydantic-settings==2.2.1
 loguru==0.7.2
 nltk==3.8.1
-asyncio-throttle==0.1.0 # For request throttling
-guessit==3.8.0 # Moving guessit to after rapidfuzz as it might have its own dependencies
-# Speedups for aiohttp
-cchardet==2.1.7
-aiodns==3.0.0
+asyncio-throttle==0.1.0
+guessit==3.8.0
+chardet==5.2.0 # Replaced cchardet with chardet for Python 3.11 compatibility and stable builds.
+# Removed aiodns as it was implicitly related to cchardet issues in some contexts.
