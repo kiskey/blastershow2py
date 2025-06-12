@@ -42,9 +42,9 @@ class HttpClient:
         Configures TCPConnector for HTTP/2 support.
         """
         logger.debug("Initializing aiohttp ClientSession with HTTP/2 support.")
-        # Create a TCPConnector instance, explicitly enabling HTTP/2
-        # Removed 'force_interface' as it's not a valid argument for aiohttp==3.9.5
-        connector = TCPConnector(enable_http2=True)
+        # Create a TCPConnector instance. HTTP/2 will be used automatically if 'h2' and 'hpack'
+        # are installed and the server supports it, no explicit 'enable_http2' arg is needed here.
+        connector = TCPConnector()
         self.session = ClientSession(connector=connector)
         return self
 
