@@ -49,6 +49,6 @@ USER appuser
 # Expose the port our aiohttp server will run on
 EXPOSE 8080
 
-# Define the command to run the application
-# Now that /usr/local/bin is explicitly in PATH, 'aiorun' should be found correctly.
-CMD ["aiorun", "--single-task", "--shutdown-timeout", "5.0", "main:main"]
+# Define the command to run the application using python -m runpy for robustness.
+# This directly executes main:main through Python's standard library.
+CMD ["python", "-m", "runpy", "main", "main"]
