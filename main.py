@@ -75,13 +75,22 @@ async def lifespan_manager():
 
             logger.info("Application shutdown complete.")
 
+async def run_application():
+    """
+    Wrapper coroutine to properly run the lifespan_manager async context manager.
+    """
+    async with lifespan_manager():
+        # Keep the event loop running indefinitely while the application is active
+        # This prevents the 'run_application' coroutine from exiting prematurely.
+        await asyncio.Event().wait()
+
+
 def main():
     """
     Main entry point for the application using aiorun.
     """
-    # Pass the lifespan_manager function directly as the first positional argument.
-    # aiorun will internally handle entering/exiting the async context manager.
-    aiorun.run(lifespan_manager, stop_on_unhandled_errors=True)
+    # Pass the run_application coroutine function directly to aiorun.run().
+    aiorun.run(run_application, stop_on_unhandled_errors=True)
 
 if __name__ == "__main__":
     main()
