@@ -38,26 +38,32 @@ class Crawler:
     async def _get_thread_links_from_page(self, html_content: str) -> List[Dict[str, str]]:
         """
         Extracts valid thread links from a forum page's HTML content.
-        Parses `<a class="" data-ipshover>` links for threads.
+        Robustly parses links by focusing on URL pattern rather than specific CSS classes.
         """
         soup = self.thread_parser.BeautifulSoup(html_content, 'html.parser')
         thread_links = []
-        # Find all <a> tags that are likely thread links.
-        # This selector targets links typically found in thread lists.
-        # It's an approximation, adjust if the forum's HTML changes.
-        for a_tag in soup.find_all("a", class_="ipsType_break ipsContained"):
-            href = a_tag.get("href")
-            # Ensure it's a full URL or join it
-            if href and not href.startswith("http"):
+
+        # Broaden the search to all <a> tags that have an 'href' attribute.
+        # Then filter these tags based on whether their href matches the expected thread URL pattern.
+        for a_tag in soup.find_all("a", href=True): # Find all <a> tags that have an href attribute
+            href = a_tag["href"] # Get the value of the href attribute
+
+            # Ensure it's a full URL by joining with the base_url if it's a relative path
+            if not href.startswith("http"):
                 href = urljoin(self.base_url, href)
 
-            if href and self.thread_url_pattern.search(href):
-                # Extract thread ID from the URL using the compiled regex
-                match = self.thread_url_pattern.search(href)
-                thread_id = match.group(1) if match else None
-                if thread_id:
-                    thread_links.append({"url": href, "id": thread_id})
-                    logger.debug(f"Found thread link: {href} (ID: {thread_id})")
+            # Check if the href matches the defined thread URL pattern
+            match = self.thread_url_pattern.search(href)
+            if match:
+                thread_id = match.group(1)
+                # Basic deduplication: Add only if the thread_id is found and not already in our list
+                if thread_id: # Ensure thread_id was actually extracted
+                    # To prevent adding the same thread multiple times if linked from different parts of the page,
+                    # we can use a set of IDs already added in this page.
+                    # For simplicity, we'll check against the list for now, as thread_links won't be very large per page.
+                    if not any(link['id'] == thread_id for link in thread_links):
+                        thread_links.append({"url": href, "id": thread_id})
+                        logger.debug(f"Found thread link: {href} (ID: {thread_id})")
         return thread_links
 
     async def _process_thread(self, thread_url: str, thread_id: str):
