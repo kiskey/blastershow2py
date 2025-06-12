@@ -14,9 +14,14 @@ WORKDIR /app
 # Copy only requirements first to leverage Docker cache
 COPY requirements.txt .
 
-# Install Python dependencies
-# Use --no-cache-dir for smaller image size
-RUN pip install --no-cache-dir -r requirements.txt
+# Install build dependencies required for some Python packages (like cchardet)
+# and then remove them to keep the final image size small.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential && \
+    pip install --no-cache-dir -r requirements.txt && \
+    apt-get purge -y build-essential && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
 # Download NLTK data required for text normalization
 # These commands need to run before copying the application code
