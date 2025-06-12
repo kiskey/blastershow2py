@@ -7,9 +7,10 @@ ENV NLTK_DATA=/usr/local/nltk_data \
     PYTHONUNBUFFERED=1 \
     PATH="/usr/local/bin:$PATH"
 
-# Create a non-root user and its primary group
+# Create a non-root user and add them to the system group
 RUN addgroup --system appgroup && \
-    adduser --system --disabled-password --gecos "" --no-create-home --gid appgroup appuser
+    adduser --system --disabled-password --gecos "" --no-create-home appuser && \
+    adduser appuser appgroup
 
 # Set the working directory inside the container
 WORKDIR /app
