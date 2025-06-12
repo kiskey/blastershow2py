@@ -3,7 +3,7 @@ import re
 from urllib.parse import urljoin, urlparse
 import time
 from typing import Dict, Any, List
-from aiohttp import ClientError # Explicitly import ClientError
+from aiohttp import ClientError, ClientResponseError # Explicitly import ClientResponseError
 
 from logger import logger
 from config import settings
@@ -26,13 +26,10 @@ class Crawler:
         self.thread_parser = thread_parser
         self.normalizer = normalizer
 
-        # Use settings.FORUM_URL directly as the base for forum page URLs.
-        # This handles the '?' in the path correctly.
         self.forum_base_url_for_pagination = settings.FORUM_URL
         if not self.forum_base_url_for_pagination.endswith('/'):
-            self.forum_base_url_for_pagination += '/' # Ensure trailing slash for consistent pagination
+            self.forum_base_url_for_pagination += '/'
 
-        # Extract only the scheme and netloc for general URL joining (e.g., poster URLs)
         parsed_settings_forum_url = urlparse(settings.FORUM_URL)
         self.base_domain_url = f"{parsed_settings_forum_url.scheme}://{parsed_settings_forum_url.netloc}"
 
@@ -50,23 +47,38 @@ class Crawler:
     async def _get_thread_links_from_page(self, html_content: str) -> List[Dict[str, str]]:
         """
         Extracts valid thread links from a forum page's HTML content.
-        Robustly parses links by focusing on URL pattern rather than specific CSS classes.
+        Robustly parses links by targeting specific HTML structure where thread titles are.
         """
         soup = self.thread_parser.BeautifulSoup(html_content, 'html.parser')
         thread_links = []
 
-        for a_tag in soup.find_all("a", href=True):
-            href = a_tag["href"]
+        # Look for the main container for each thread item.
+        # Use a lambda function for class search to find 'ipsDataItem' anywhere in the class attribute.
+        thread_list_items = soup.find_all("li", class_=lambda x: x and "ipsDataItem" in x.split())
 
-            if not href.startswith("http"):
-                href = urljoin(self.base_domain_url, href) # Use base_domain_url for general relative links
+        for item in thread_list_items:
+            # Inside each item, find any <a> tag with an href attribute.
+            # This is more robust as it relies on the container's class and the URL pattern,
+            # not specific classes on the <a> tag itself or an intermediate <h4>.
+            a_tag = item.find("a", href=True)
+            if a_tag:
+                href = a_tag["href"]
 
-            match = self.thread_url_pattern.search(href)
-            if match:
-                thread_id = match.group(1)
-                if thread_id and not any(link['id'] == thread_id for link in thread_links):
-                    thread_links.append({"url": href, "id": thread_id})
-                    logger.debug(f"Found thread link: {href} (ID: {thread_id})")
+                # Ensure it's a full URL by joining with the base_domain_url if it's a relative path.
+                if not href.startswith("http"):
+                    href = urljoin(self.base_domain_url, href)
+
+                # Check if the href matches the defined thread URL pattern.
+                match = self.thread_url_pattern.search(href)
+                if match:
+                    thread_id = match.group(1)
+                    # Basic deduplication: Add only if the thread_id is found and not already in our list.
+                    if thread_id and not any(link['id'] == thread_id for link in thread_links):
+                        thread_links.append({"url": href, "id": thread_id})
+                        logger.debug(f"Found thread link: {href} (ID: {thread_id})")
+        
+        if not thread_links:
+            logger.info("No thread links found on the current page. Check HTML structure or URL patterns.")
         return thread_links
 
     async def _process_thread(self, thread_url: str, thread_id: str):
@@ -86,16 +98,25 @@ class Crawler:
                     logger.warning(f"Failed to parse essential data from thread: {thread_url}")
             else:
                 logger.warning(f"Failed to fetch content for thread: {thread_url}")
-        except ClientError as e: # Catch aiohttp's specific error
-            logger.error(f"HTTP Client Error processing thread {thread_url}: {str(e)}") # Log without exc_info to prevent 'Level' error if from ClientResponseError
+        except ClientResponseError as e: # Specific HTTP client errors
+            logger.error(f"HTTP Client Response Error processing thread {thread_url}: Status={e.status}, Message='{e.message}', URL='{e.url}'")
             await self.redis.add_error_to_queue({
                 "component": "crawler",
-                "message": f"HTTP Client Error processing thread {thread_url}: {str(e)}",
+                "message": f"HTTP Client Response Error processing thread {thread_url}: Status={e.status}, Error='{e.message}'",
                 "error": str(e),
                 "timestamp": int(time.time())
             })
-        except Exception as e:
-            logger.error(f"Error processing thread {thread_url}: {str(e)}", exc_info=True)
+        except ClientError as e: # Other generic client errors
+            logger.error(f"Generic HTTP Client Error processing thread {thread_url}: {str(e)}")
+            await self.redis.add_error_to_queue({
+                "component": "crawler",
+                "message": f"Generic HTTP Client Error processing thread {thread_url}: {str(e)}",
+                "error": str(e),
+                "timestamp": int(time.time())
+            })
+        except Exception as e: # Catch-all for other unexpected errors
+            # Removed exc_info=True for general Exception after ClientError to avoid loguru conflict
+            logger.error(f"Error processing thread {thread_url}: {str(e)}")
             await self.redis.add_error_to_queue({
                 "component": "crawler",
                 "message": f"Failed to process thread {thread_url}",
@@ -123,15 +144,8 @@ class Crawler:
         try:
             while page_num <= initial_pages:
                 if page_num == 1:
-                    # For the first page, use the FORUM_URL from settings directly.
-                    # It's expected to be the full URL for page 1.
                     page_url = settings.FORUM_URL
                 else:
-                    # For subsequent pages, append 'page/{page_num}/' to the full FORUM_URL
-                    # This ensures the '?' and the subsequent path segment are preserved.
-                    # Example: https://www.1tamilmv.boo/index.php?/forums/forum/19-web-series-tv-shows/page/2/
-                    # We ensure a trailing slash on forum_base_url_for_pagination during init
-                    # so we can just append.
                     page_url = f"{self.forum_base_url_for_pagination}page/{page_num}/"
 
                 logger.info(f"Crawling forum page: {page_url}")
@@ -164,16 +178,25 @@ class Crawler:
 
                 page_num += 1
 
-        except ClientError as e: # Catch aiohttp's specific error
-            logger.error(f"HTTP Client Error during forum crawling: {str(e)}") # Log without exc_info
+        except ClientResponseError as e: # Specific HTTP client errors
+            logger.error(f"HTTP Client Error during forum crawling: Status={e.status}, Message='{e.message}', URL='{e.url}'")
             await self.redis.add_error_to_queue({
                 "component": "crawler",
-                "message": f"HTTP Client Error during forum crawl: {str(e)}",
+                "message": f"HTTP Client Error during forum crawl: Status={e.status}, Error='{e.message}'",
                 "error": str(e),
                 "timestamp": int(time.time())
             })
-        except Exception as e:
-            logger.error(f"Critical error during forum crawling: {str(e)}", exc_info=True)
+        except ClientError as e: # Other generic client errors
+            logger.error(f"Generic HTTP Client Error during forum crawling: {str(e)}")
+            await self.redis.add_error_to_queue({
+                "component": "crawler",
+                "message": f"Generic HTTP Client Error during forum crawl: {str(e)}",
+                "error": str(e),
+                "timestamp": int(time.time())
+            })
+        except Exception as e: # Catch-all for other unexpected errors
+            # Removed exc_info=True for general Exception after ClientError to avoid loguru conflict
+            logger.error(f"Critical error during forum crawling: {str(e)}")
             await self.redis.add_error_to_queue({
                 "component": "crawler",
                 "message": f"Critical forum crawl error",
